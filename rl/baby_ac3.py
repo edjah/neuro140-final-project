@@ -21,7 +21,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 def get_args():
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument("--env", default="Breakout-v4", type=str, help="gym environment")
-    parser.add_argument("--processes", default=12, type=int, help="number of processes to train with")
+    parser.add_argument("--processes", default=6, type=int, help="number of processes to train with")
     parser.add_argument("--render", action="store_true", help="renders the atari environment")
     parser.add_argument("--test", action="store_true", help="sets lr=0, chooses most likely actions")
     parser.add_argument("--rnn_steps", default=20, type=int, help="steps to train LSTM over")
@@ -156,7 +156,7 @@ def train(shared_model, shared_optimizer, rank, args, info):
     episode_length, epr, eploss, done = 0, 0, 0, True
 
     # openai baselines uses 40M frames...we'll use 80M
-    while args.test or info["frames"][0] <= 8e7:
+    while args.test or info["frames"][0] <= 9e7:
         if shared_model is not None:
             # sync with shared model
             model.load_state_dict(shared_model.state_dict())
@@ -277,6 +277,7 @@ if __name__ == "__main__":
         args.lr = 0  # don't train in render mode
 
     args.num_actions = gym.make(args.env).action_space.n
+    print('num actions =', args.num_actions)
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
 

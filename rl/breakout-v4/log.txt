@@ -77,3 +77,4 @@ time 01h 14m 09s, episodes 7081, frames 2.00M, mean epr 3.14, run loss -2.20
 	2M frames: saved model
 
 time 01h 15m 09s, episodes 7163, frames 2.03M, mean epr 3.27, run loss -1.88
+time 00h 01m 00s, episodes 14, frames 80.03M, mean epr 33.40, run loss -34.92
