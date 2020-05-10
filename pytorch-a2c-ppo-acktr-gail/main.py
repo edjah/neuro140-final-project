@@ -44,10 +44,16 @@ def main():
     envs = make_vec_envs(args.env_name, args.seed, args.num_processes,
                          args.gamma, args.log_dir, device, False)
 
-    actor_critic = Policy(
-        envs.observation_space.shape,
-        envs.action_space,
-        base_kwargs={'recurrent': args.recurrent_policy})
+    if args.model_path and os.path.exists(args.model_path):
+        actor_critic, _ = torch.load(args.model_path)
+        print('Loaded saved model at {}'.format(args.model_path))
+    else:
+        actor_critic = Policy(
+            envs.observation_space.shape,
+            envs.action_space,
+            base_kwargs={'recurrent': args.recurrent_policy}
+        )
+
     actor_critic.to(device)
 
     if args.algo == 'a2c':
@@ -103,10 +109,9 @@ def main():
     episode_rewards = deque(maxlen=10)
 
     start = time.time()
-    num_updates = int(
-        args.num_env_steps) // args.num_steps // args.num_processes
-    for j in range(num_updates):
+    num_updates = int(args.num_env_steps) // args.num_steps // args.num_processes
 
+    for j in range(num_updates):
         if args.use_linear_lr_decay:
             # decrease learning rate linearly
             utils.update_linear_schedule(
@@ -118,10 +123,13 @@ def main():
             with torch.no_grad():
                 value, action, action_log_prob, recurrent_hidden_states = actor_critic.act(
                     rollouts.obs[step], rollouts.recurrent_hidden_states[step],
-                    rollouts.masks[step])
+                    rollouts.masks[step], deterministic=args.no_update)
 
             # Obser reward and next obs
             obs, reward, done, infos = envs.step(action)
+
+            if args.render:
+                envs.render()
 
             for info in infos:
                 if 'episode' in info.keys():
@@ -160,23 +168,28 @@ def main():
         rollouts.compute_returns(next_value, args.use_gae, args.gamma,
                                  args.gae_lambda, args.use_proper_time_limits)
 
-        value_loss, action_loss, dist_entropy = agent.update(rollouts)
+        if not args.no_update:
+            value_loss, action_loss, dist_entropy = agent.update(rollouts)
+        else:
+            value_loss, action_loss, dist_entropy = 0.0, 0.0, 0.0
 
         rollouts.after_update()
 
         # save for every interval-th episode or for the last epoch
         if (j % args.save_interval == 0
                 or j == num_updates - 1) and args.save_dir != "":
-            save_path = os.path.join(args.save_dir, args.algo)
-            try:
-                os.makedirs(save_path)
-            except OSError:
-                pass
+            if args.model_path is None:
+                save_path = os.path.join(args.save_dir, args.algo)
+                save_path = os.path.join(save_path, args.env_name + ".pt")
+            else:
+                save_path = args.model_path
+
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             torch.save([
                 actor_critic,
                 getattr(utils.get_vec_normalize(envs), 'ob_rms', None)
-            ], os.path.join(save_path, args.env_name + ".pt"))
+            ], save_path)
 
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps

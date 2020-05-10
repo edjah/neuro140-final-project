@@ -130,6 +130,10 @@ def get_args():
         default='./trained_models/',
         help='directory to save agent logs (default: ./trained_models/)')
     parser.add_argument(
+        '--model-path',
+        default=None,
+        help='path to load a saved model from. Also used as a save path')
+    parser.add_argument(
         '--no-cuda',
         action='store_true',
         default=False,
@@ -149,6 +153,16 @@ def get_args():
         action='store_true',
         default=False,
         help='use a linear schedule on the learning rate')
+    parser.add_argument(
+        '--render',
+        action='store_true',
+        default=False,
+        help='render the game')
+    parser.add_argument(
+        '--no-update',
+        action='store_true',
+        default=False,
+        help='don\'t update the weights. only do evaluation')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
