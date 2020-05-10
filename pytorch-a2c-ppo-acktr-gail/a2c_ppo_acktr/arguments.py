@@ -163,6 +163,25 @@ def get_args():
         action='store_true',
         default=False,
         help='don\'t update the weights. only do evaluation')
+    parser.add_argument(
+        '--max-prune-percent',
+        default=0,
+        type=float,
+        help='what fraction of the available weights should be pruned in total')
+    parser.add_argument(
+        '--prune-percent',
+        default=0.05,
+        help='what fraction of available weights should be pruned at each step')
+    parser.add_argument(
+        '--prune-interval',
+        default=5000,
+        type=int,
+        help='how many updates between each pruning step')
+    parser.add_argument(
+        '--cl-step',
+        default=None,
+        type=int,
+        help='what step of continual learning are we on')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()

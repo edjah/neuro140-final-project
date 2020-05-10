@@ -65,11 +65,13 @@ class A2C_ACKTR():
             fisher_loss = pg_fisher_loss + vf_fisher_loss
             self.optimizer.acc_stats = True
             fisher_loss.backward(retain_graph=True)
+            self.actor_critic.zero_masked_gradients()
             self.optimizer.acc_stats = False
 
         self.optimizer.zero_grad()
         (value_loss * self.value_loss_coef + action_loss -
          dist_entropy * self.entropy_coef).backward()
+        self.actor_critic.zero_masked_gradients()
 
         if self.acktr == False:
             nn.utils.clip_grad_norm_(self.actor_critic.parameters(),

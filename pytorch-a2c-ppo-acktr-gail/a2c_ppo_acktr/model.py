@@ -78,6 +78,16 @@ class Policy(nn.Module):
 
         return value, action_log_probs, dist_entropy, rnn_hxs
 
+    def zero_masked_gradients(self):
+        # we want to prevent the fixed weights from being updated, so
+        # we give them a zero gradient
+        for m in self.base.get_sparse_parameters():
+            if m._weight.grad is not None:
+                m._weight.grad *= (m._mask_weight == m.mask_version)
+
+            if m.bias_shape is not None and m._bias.grad is not None:
+                m._bias.grad *= (m._mask_bias == m.mask_version)
+
 
 class NNBase(nn.Module):
     def __init__(self, recurrent, recurrent_input_size, hidden_size):
