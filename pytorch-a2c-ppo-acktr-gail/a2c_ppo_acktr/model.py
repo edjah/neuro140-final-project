@@ -165,26 +165,120 @@ class NNBase(nn.Module):
 
         return x, hxs
 
+    def get_sparse_parameters(self):
+        raise NotImplementedError
+
+
+class SparseNNModule(nn.Module):
+    def __init__(self, weight_shape, bias_shape=None):
+        super().__init__()
+        self.weight_shape = weight_shape
+        self.bias_shape = bias_shape
+        self.mask_version = 1
+
+        n = np.prod(weight_shape)
+        self._weight = nn.Parameter(torch.Tensor(n))
+        self.register_buffer('_mask_weight', torch.ones(n, dtype=torch.int8))
+
+        if self.bias_shape is not None:
+            m = np.prod(bias_shape)
+            self._bias = nn.Parameter(torch.Tensor(m))
+            self.register_buffer('_mask_bias', torch.ones(m, dtype=torch.int8))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        weight_view = self._weight.view(self.weight_shape)
+        nn.init.orthogonal_(weight_view, gain=np.sqrt(2))
+
+        if self.bias_shape is not None:
+            nn.init.constant_(self._bias, 0)
+
+    def update_mask_version(self, version):
+        self.mask_version = version
+        self._mask_weight[self._mask_weight == 0] = version
+
+        if self.bias_shape is not None:
+            self._mask_bias[self._mask_bias == 0] = version
+
+    @property
+    def weight(self):
+        return self.mask_weight * self._weight.view(self.weight_shape)
+
+    @property
+    def bias(self):
+        if self.bias_shape is None:
+            return None
+        return self.mask_bias * self._bias.view(self.bias_shape)
+
+    @property
+    def mask_bias(self):
+        if self.bias_shape is None:
+            return None
+
+        vals = (self._mask_bias > 0) & (self._mask_bias <= self.mask_version)
+        return vals.view(self.bias_shape)
+
+    @property
+    def mask_weight(self):
+        vals = (self._mask_weight > 0) & (self._mask_weight <= self.mask_version)
+        return vals.view(self.weight_shape)
+
+
+class SparseConv2d(SparseNNModule):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, bias=True):
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride if isinstance(stride, tuple) else (stride, stride)
+        self.padding = padding if isinstance(padding, tuple) else (padding, padding)
+
+        weight_shape = (out_channels, in_channels, kernel_size, kernel_size)
+        bias_shape = (out_channels,) if bias else None
+        super().__init__(weight_shape, bias_shape)
+
+    def forward(self, x):
+        return F.conv2d(x, self.weight, self.bias, stride=self.stride, padding=self.padding)
+
+
+class SparseLinear(SparseNNModule):
+    def __init__(self, in_features, out_features, bias=True):
+        self.in_features = in_features
+        self.out_features = out_features
+
+        weight_shape = (out_features, in_features)
+        bias_shape = (out_features,) if bias else None
+        super().__init__(weight_shape, bias_shape)
+
+    def forward(self, x):
+        return F.linear(x, self.weight, self.bias)
+
 
 class CNNBase(NNBase):
     def __init__(self, num_inputs, recurrent=False, hidden_size=512):
         super(CNNBase, self).__init__(recurrent, hidden_size, hidden_size)
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0), nn.init.calculate_gain('relu'))
-
         self.main = nn.Sequential(
-            init_(nn.Conv2d(num_inputs, 32, 8, stride=4)), nn.ReLU(),
-            init_(nn.Conv2d(32, 64, 4, stride=2)), nn.ReLU(),
-            init_(nn.Conv2d(64, 32, 3, stride=1)), nn.ReLU(), Flatten(),
-            init_(nn.Linear(32 * 7 * 7, hidden_size)), nn.ReLU())
+            SparseConv2d(num_inputs, 32, 8, stride=4), nn.ReLU(),
+            SparseConv2d(32, 64, 4, stride=2), nn.ReLU(),
+            SparseConv2d(64, 32, 3, stride=1), nn.ReLU(), Flatten(),
+            SparseLinear(32 * 7 * 7, hidden_size), nn.ReLU()
+        )
 
-        init_ = lambda m: init(m, nn.init.orthogonal_, lambda x: nn.init.
-                               constant_(x, 0))
-
-        self.critic_linear = init_(nn.Linear(hidden_size, 1))
+        self.critic_linear = SparseLinear(hidden_size, 1)
 
         self.train()
+
+    def get_sparse_parameters(self):
+        """
+        Returns a list of all of the SparseNNModules in the model.
+        """
+        modules = []
+        for m in list(self.main) + [self.critic_linear]:
+            if isinstance(m, SparseNNModule):
+                modules.append(m)
+
+        return modules
 
     def forward(self, inputs, rnn_hxs, masks):
         x = self.main(inputs / 255.0)
