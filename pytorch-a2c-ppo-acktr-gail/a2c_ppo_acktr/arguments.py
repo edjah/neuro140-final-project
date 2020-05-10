@@ -171,6 +171,7 @@ def get_args():
     parser.add_argument(
         '--prune-percent',
         default=0.05,
+        type=float,
         help='what fraction of available weights should be pruned at each step')
     parser.add_argument(
         '--prune-interval',

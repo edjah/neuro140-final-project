@@ -205,11 +205,23 @@ class SparseNNModule(nn.Module):
             nn.init.constant_(self._bias, 0)
 
     def update_mask_version(self, version):
+        # update the mask versions, and re-initialize the weights
         self.mask_version = version
-        self._mask_weight[self._mask_weight == 0] = version
 
+        saved_weight = self._weight[self._mask_weight != 0].clone()
+        saved_bias = None
         if self.bias_shape is not None:
-            self._mask_bias[self._mask_bias == 0] = version
+            saved_bias = self._bias[self._mask_bias != 0].clone()
+
+        self.reset_parameters()
+
+        with torch.no_grad():
+            self._weight[self._mask_weight != 0] = saved_weight
+            self._mask_weight[self._mask_weight == 0] = version
+
+            if self.bias_shape is not None:
+                self._bias[self._mask_bias != 0] = saved_bias
+                self._mask_bias[self._mask_bias == 0] = version
 
     @property
     def weight(self):

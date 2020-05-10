@@ -116,7 +116,10 @@ def main():
 
     if cl_version is not None:
         for m in actor_critic.base.get_sparse_parameters():
-            m.update_mask_version(cl_version)
+            if args.no_update:
+                m.mask_version = cl_version
+            else:
+                m.update_mask_version(cl_version)
             cl_available_params += int((m._mask_weight == cl_version).sum())
             cl_total_params += m._mask_weight.numel()
 
@@ -245,7 +248,7 @@ def main():
         # prune every once in a while. don't start pruning until some time
         # has passed
         if (args.max_prune_percent - cl_curr_sparsity > 0.001) and \
-           (j >= 0 * args.prune_interval and j % args.prune_interval == 0):
+           (j >= 10 * args.prune_interval and j % args.prune_interval == 0):
 
             params = []
             for m in actor_critic.base.get_sparse_parameters():
@@ -256,11 +259,12 @@ def main():
             sparse_params = 0
             for weight, mask in params:
                 avail_idx = (mask == cl_version).nonzero().flatten()
-
-                orig_count = round(mask.numel() / cl_total_params * cl_available_params)
-                remaining_pcnt = len(avail_idx) / orig_count
+                orig_count = ((mask == 0) | (mask == cl_version)).sum().item()
+                # print(f'avail_idx = {len(avail_idx)} | orig_count = {orig_count} | total = {len(mask)}')
+                remaining_pcnt = len(avail_idx) / orig_count if orig_count > 0 else 0
 
                 prune_pcnt = min(remaining_pcnt - args.max_prune_percent, args.prune_percent)
+                prune_pcnt = max(0, prune_pcnt)
                 num_prune = int(prune_pcnt * orig_count)
 
                 # sorting the weights by magnitude and getting their indices
@@ -271,7 +275,7 @@ def main():
                 sparse_params += int((mask == 0).sum())
 
             cl_curr_sparsity = sparse_params / cl_available_params
-            print(f'Pruned. Current sparsity = {100.0 * cl_curr_sparsity:.2f}%')
+            print(f'Pruned. Current sparsity = {100.0 * cl_curr_sparsity:.1f}%')
 
 
 if __name__ == "__main__":
