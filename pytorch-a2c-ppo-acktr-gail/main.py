@@ -26,16 +26,6 @@ from evaluation import evaluate
 def main():
     args = get_args()
 
-    if args.cl_step == 1:
-        args.env_name = 'PongNoFrameskip-v4'
-        args.log_dir = 'logs/pong/'
-    elif args.cl_step == 2:
-        args.env_name = 'SixActionBreakoutNoFrameskip-v4'
-        args.log_dir = 'logs/breakout/'
-    elif args.cl_step == 3:
-        args.env_name = 'SpaceInvadersNoFrameskip-v4'
-        args.log_dir = 'logs/spaceinvaders/'
-
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
@@ -54,15 +44,15 @@ def main():
     envs = make_vec_envs(args.env_name, args.seed, args.num_processes,
                          args.gamma, args.log_dir, device, False)
 
+    actor_critic = Policy(
+        envs.observation_space.shape,
+        envs.action_space,
+        base_kwargs={'recurrent': args.recurrent_policy}
+    )
     if args.model_path and os.path.exists(args.model_path):
-        actor_critic, _ = torch.load(args.model_path)
+        actor_critic_state, _ = torch.load(args.model_path)
+        actor_critic.load_state_dict(actor_critic_state)
         print('Loaded saved model at {}'.format(args.model_path))
-    else:
-        actor_critic = Policy(
-            envs.observation_space.shape,
-            envs.action_space,
-            base_kwargs={'recurrent': args.recurrent_policy}
-        )
 
     actor_critic.to(device)
 
@@ -111,25 +101,34 @@ def main():
     # setting up for weight pruning/continual learning
     cl_version = args.cl_step
     cl_available_params = 0
+    cl_sparse_params = 0
     cl_total_params = 0
-    cl_curr_sparsity = 0
 
     if cl_version is not None:
         for m in actor_critic.base.get_sparse_parameters():
-            if args.no_update:
-                m.mask_version = cl_version
-            else:
-                m.update_mask_version(cl_version)
+            m.update_mask_version(cl_version)
+            if not args.no_update and (m._mask_weight == cl_version).sum() == 0:
+                m.reinit_pruned_weights()
+
             cl_available_params += int((m._mask_weight == cl_version).sum())
+            cl_sparse_params += int((m._mask_weight == 0).sum())
             cl_total_params += m._mask_weight.numel()
 
             if m.bias_shape is not None:
                 cl_available_params += int((m._mask_bias == cl_version).sum())
+                cl_sparse_params += int((m._mask_bias == 0).sum())
                 cl_total_params += m._mask_bias.numel()
+
+        cl_available_params += cl_sparse_params
+
+    cl_curr_sparsity = cl_sparse_params / cl_available_params
 
     print('{}/{} ({:.2f}%) parameters are available to train.'.format(
         cl_available_params, cl_total_params,
         100.0 * cl_available_params / cl_total_params
+    ))
+    print('Starting sparsity = {:.1f}%\n'.format(
+        100.0 * cl_curr_sparsity
     ))
 
     rollouts = RolloutStorage(args.num_steps, args.num_processes,
@@ -221,7 +220,7 @@ def main():
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             torch.save([
-                actor_critic,
+                actor_critic.state_dict(),
                 getattr(utils.get_vec_normalize(envs), 'ob_rms', None)
             ], save_path)
 
@@ -230,8 +229,8 @@ def main():
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
             end = time.time()
             print(
-                "Updates {}, num timesteps {}, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
-                .format(j, total_num_steps,
+                "Updates {}, num timesteps {}, Sparsity {:.1f}%, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
+                .format(j, total_num_steps, 100.0 * cl_curr_sparsity,
                         int(total_num_steps / (end - start)),
                         len(episode_rewards), np.mean(episode_rewards),
                         np.median(episode_rewards), np.min(episode_rewards),
@@ -248,7 +247,8 @@ def main():
         # prune every once in a while. don't start pruning until some time
         # has passed
         if (args.max_prune_percent - cl_curr_sparsity > 0.001) and \
-           (j >= 10 * args.prune_interval and j % args.prune_interval == 0):
+           (cl_curr_sparsity > 0 or j >= args.prune_start) and \
+           (args.prune_interval and j % args.prune_interval == 0):
 
             params = []
             for m in actor_critic.base.get_sparse_parameters():
@@ -256,25 +256,27 @@ def main():
                 if m.bias_shape is not None:
                     params.append((m._bias, m._mask_bias))
 
-            sparse_params = 0
             for weight, mask in params:
                 avail_idx = (mask == cl_version).nonzero().flatten()
                 orig_count = ((mask == 0) | (mask == cl_version)).sum().item()
-                # print(f'avail_idx = {len(avail_idx)} | orig_count = {orig_count} | total = {len(mask)}')
                 remaining_pcnt = len(avail_idx) / orig_count if orig_count > 0 else 0
 
-                prune_pcnt = min(remaining_pcnt - args.max_prune_percent, args.prune_percent)
+                prune_pcnt = min(remaining_pcnt - (1 - args.max_prune_percent), args.prune_percent)
                 prune_pcnt = max(0, prune_pcnt)
                 num_prune = int(prune_pcnt * orig_count)
+
+                # print(f'avail_idx = {len(avail_idx)} | orig_count = {orig_count} '
+                #       f'| total = {len(mask)} | remaining_pcnt = {remaining_pcnt} '
+                #       f'| num_prune = {num_prune}')
 
                 # sorting the weights by magnitude and getting their indices
                 prune_idx = torch.argsort(weight[avail_idx].abs())[:num_prune]
 
                 # setting those weights to zero in the mask
                 mask[avail_idx[prune_idx]] = 0
-                sparse_params += int((mask == 0).sum())
+                cl_sparse_params += len(prune_idx)
 
-            cl_curr_sparsity = sparse_params / cl_available_params
+            cl_curr_sparsity = cl_sparse_params / cl_available_params
             print(f'Pruned. Current sparsity = {100.0 * cl_curr_sparsity:.1f}%')
 
 

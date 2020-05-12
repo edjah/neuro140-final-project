@@ -205,9 +205,10 @@ class SparseNNModule(nn.Module):
             nn.init.constant_(self._bias, 0)
 
     def update_mask_version(self, version):
-        # update the mask versions, and re-initialize the weights
+        # update the mask versions
         self.mask_version = version
 
+    def reinit_pruned_weights(self):
         saved_weight = self._weight[self._mask_weight != 0].clone()
         saved_bias = None
         if self.bias_shape is not None:
@@ -217,11 +218,11 @@ class SparseNNModule(nn.Module):
 
         with torch.no_grad():
             self._weight[self._mask_weight != 0] = saved_weight
-            self._mask_weight[self._mask_weight == 0] = version
+            self._mask_weight[self._mask_weight == 0] = self.mask_version
 
             if self.bias_shape is not None:
                 self._bias[self._mask_bias != 0] = saved_bias
-                self._mask_bias[self._mask_bias == 0] = version
+                self._mask_bias[self._mask_bias == 0] = self.mask_version
 
     @property
     def weight(self):
@@ -287,7 +288,10 @@ class CNNBase(NNBase):
             SparseLinear(32 * 7 * 7, hidden_size), nn.ReLU()
         )
 
-        self.critic_linear = SparseLinear(hidden_size, 1)
+        init_ = lambda m: init(
+            m, nn.init.orthogonal_, lambda x: nn.init.constant_(x, 0), np.sqrt(2)
+        )
+        self.critic_linear = init_(nn.Linear(hidden_size, 1))
 
         self.train()
 

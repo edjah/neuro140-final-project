@@ -170,14 +170,19 @@ def get_args():
         help='what fraction of the available weights should be pruned in total')
     parser.add_argument(
         '--prune-percent',
-        default=0.05,
+        default=0.02,
         type=float,
         help='what fraction of available weights should be pruned at each step')
     parser.add_argument(
         '--prune-interval',
-        default=5000,
+        default=500,
         type=int,
         help='how many updates between each pruning step')
+    parser.add_argument(
+        '--prune-start',
+        default=50000,
+        type=int,
+        help='how long to wait before starting pruning')
     parser.add_argument(
         '--cl-step',
         default=None,
