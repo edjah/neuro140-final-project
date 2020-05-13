@@ -17,6 +17,7 @@ import torch.optim as optim
 from a2c_ppo_acktr import algo, utils
 from a2c_ppo_acktr.algo import gail
 from a2c_ppo_acktr.arguments import get_args
+from a2c_ppo_acktr.utils import init
 from a2c_ppo_acktr.envs import make_vec_envs
 from a2c_ppo_acktr.model import Policy
 from a2c_ppo_acktr.storage import RolloutStorage
@@ -53,6 +54,12 @@ def main():
         actor_critic_state, _ = torch.load(args.model_path)
         actor_critic.load_state_dict(actor_critic_state)
         print('Loaded saved model at {}'.format(args.model_path))
+
+    if args.reinit_critic:
+        actor_critic.base.critic_linear = init(
+            actor_critic.base.critic_linear, nn.init.orthogonal_,
+            lambda x: nn.init.constant_(x, 0), np.sqrt(2)
+        )
 
     actor_critic.to(device)
 

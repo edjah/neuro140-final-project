@@ -100,8 +100,8 @@ def get_args():
     parser.add_argument(
         '--log-interval',
         type=int,
-        default=10,
-        help='log interval, one log per n updates (default: 10)')
+        default=100,
+        help='log interval, one log per n updates (default: 100)')
     parser.add_argument(
         '--save-interval',
         type=int,
@@ -188,6 +188,10 @@ def get_args():
         default=None,
         type=int,
         help='what step of continual learning are we on')
+    parser.add_argument(
+        '--reinit-critic',
+        action='store_true',
+        help='whether the critic should be randomly reinitialized')
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()

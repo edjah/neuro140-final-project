@@ -8,7 +8,7 @@ python main.py \
     --num-processes=16 \
     --model-path=$MODEL_PATH \
     --cl-step=1 \
-    --log-dir=logs/$PREFIX_spaceinvaders/ \
+    --log-dir=logs/"$PREFIX"_spaceinvaders/ \
     --env-name=SpaceInvadersNoFrameskip-v4 \
     --max-prune-percent=0
 
@@ -19,7 +19,7 @@ python main.py \
     --num-processes=16 \
     --model-path=$MODEL_PATH \
     --cl-step=1 \
-    --log-dir=logs/$PREFIX_breakout/ \
+    --log-dir=logs/"$PREFIX"_breakout/ \
     --env-name=SixActionBreakoutNoFrameskip-v4 \
     --max-prune-percent=0
 
@@ -31,7 +31,7 @@ python main.py \
     --num-processes=16 \
     --model-path=$MODEL_PATH \
     --cl-step=1 \
-    --log-dir=logs/$PREFIX_pong/ \
+    --log-dir=logs/"$PREFIX"_pong/ \
     --env-name=PongNoFrameskip-v4 \
     --max-prune-percent=0.0
 
