@@ -14,7 +14,7 @@ python main.py \
     --max-prune-percent=$PRUNE_PCNT \
     --prune-interval=500 \
     --prune-percent=0.01 \
-    --prune-start=500 \
+    --prune-start=50000 \
     --cl-step=1
 
 cp $MODEL_PATH "$MODEL_PATH.spaceinvaders"
@@ -29,7 +29,7 @@ python main.py \
     --max-prune-percent=$PRUNE_PCNT \
     --prune-interval=500 \
     --prune-percent=0.01 \
-    --prune-start=500 \
+    --prune-start=50000 \
     --cl-step=2
 
 cp $MODEL_PATH "$MODEL_PATH.breakout"
