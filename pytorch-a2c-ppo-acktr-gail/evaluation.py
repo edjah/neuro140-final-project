@@ -8,7 +8,7 @@ from a2c_ppo_acktr.envs import make_vec_envs
 def evaluate(actor_critic, ob_rms, env_name, seed, num_processes, eval_log_dir,
              device):
     eval_envs = make_vec_envs(env_name, seed + num_processes, num_processes,
-                              None, eval_log_dir, device, True)
+                              None, eval_log_dir, device, True, max_episode_steps=5000)
 
     vec_norm = utils.get_vec_normalize(eval_envs)
     if vec_norm is not None:
@@ -28,10 +28,12 @@ def evaluate(actor_critic, ob_rms, env_name, seed, num_processes, eval_log_dir,
                 obs,
                 eval_recurrent_hidden_states,
                 eval_masks,
-                deterministic=True)
+                deterministic=True
+            )
 
         # Obser reward and next obs
         obs, _, done, infos = eval_envs.step(action)
+        # eval_envs.render()
 
         eval_masks = torch.tensor(
             [[0.0] if done_ else [1.0] for done_ in done],
@@ -44,5 +46,6 @@ def evaluate(actor_critic, ob_rms, env_name, seed, num_processes, eval_log_dir,
 
     eval_envs.close()
 
-    print(" Evaluation using {} episodes: mean reward {:.5f}\n".format(
-        len(eval_episode_rewards), np.mean(eval_episode_rewards)))
+    print(" {} Evaluation using {} episodes: mean reward {:.5f}\n".format(
+        env_name, len(eval_episode_rewards), np.mean(eval_episode_rewards)))
+    return float(np.mean(eval_episode_rewards))

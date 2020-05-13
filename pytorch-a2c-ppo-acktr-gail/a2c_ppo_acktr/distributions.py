@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from a2c_ppo_acktr.utils import AddBias, init
+from a2c_ppo_acktr.sparse import SparseNNModule, SparseLinear
 
 """
 Modify standard PyTorch distributions so they are compatible with this code.
@@ -59,18 +60,22 @@ class FixedBernoulli(torch.distributions.Bernoulli):
 class Categorical(nn.Module):
     def __init__(self, num_inputs, num_outputs):
         super(Categorical, self).__init__()
-
-        init_ = lambda m: init(
-            m,
-            nn.init.orthogonal_,
-            lambda x: nn.init.constant_(x, 0),
-            gain=0.01)
-
-        self.linear = init_(nn.Linear(num_inputs, num_outputs))
+        self.linear = nn.Sequential(
+            SparseLinear(num_inputs, num_inputs),
+            nn.ReLU(),
+            SparseLinear(num_inputs, num_outputs),
+        )
 
     def forward(self, x):
         x = self.linear(x)
         return FixedCategorical(logits=x)
+
+    def get_sparse_parameters(self):
+        result = []
+        for m in self.linear:
+            if isinstance(m, SparseNNModule):
+                result.append(m)
+        return result
 
 
 class DiagGaussian(nn.Module):

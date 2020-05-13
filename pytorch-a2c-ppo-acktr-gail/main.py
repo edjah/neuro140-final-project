@@ -39,11 +39,28 @@ def main():
     utils.cleanup_log_dir(log_dir)
     utils.cleanup_log_dir(eval_log_dir)
 
+    if args.cl_step is None:
+        cl_envs = [
+            ('SpaceInvadersNoFrameskip-v4', 1),
+            ('SixActionBreakoutNoFrameskip-v4', 1),
+            ('PongNoFrameskip-v4', 1),
+        ]
+    else:
+        cl_envs = [
+            ('SpaceInvadersNoFrameskip-v4', 1),
+            ('SixActionBreakoutNoFrameskip-v4', 2),
+            ('PongNoFrameskip-v4', 3),
+        ]
+
+    cl_evals_fp = open(log_dir + '/cl_evals.csv', 'w')
+    cl_evals_fp.write('timestep,')
+    cl_evals_fp.write(','.join(k for k, _ in cl_envs) + '\n')
+
     torch.set_num_threads(1)
     device = torch.device("cuda:0" if args.cuda else "cpu")
 
     envs = make_vec_envs(args.env_name, args.seed, args.num_processes,
-                         args.gamma, args.log_dir, device, False)
+                         args.gamma, args.log_dir, device, False, max_episode_steps=5000)
 
     actor_critic = Policy(
         envs.observation_space.shape,
@@ -106,25 +123,24 @@ def main():
             drop_last=drop_last)
 
     # setting up for weight pruning/continual learning
-    cl_version = args.cl_step
+    cl_version = args.cl_step or 1
     cl_available_params = 0
     cl_sparse_params = 0
     cl_total_params = 0
 
-    if cl_version is not None:
-        for m in actor_critic.base.get_sparse_parameters():
-            m.update_mask_version(cl_version)
-            if not args.no_update and (m._mask_weight == cl_version).sum() == 0:
-                m.reinit_pruned_weights()
+    for m in actor_critic.get_sparse_parameters():
+        m.update_mask_version(cl_version)
+        if not args.no_update and (m._mask_weight == cl_version).sum() == 0:
+            m.reinit_pruned_weights()
 
-            cl_available_params += int((m._mask_weight == cl_version).sum())
-            cl_sparse_params += int((m._mask_weight == 0).sum())
-            cl_total_params += m._mask_weight.numel()
+        cl_available_params += int((m._mask_weight == cl_version).sum())
+        cl_sparse_params += int((m._mask_weight == 0).sum())
+        cl_total_params += m._mask_weight.numel()
 
-            if m.bias_shape is not None:
-                cl_available_params += int((m._mask_bias == cl_version).sum())
-                cl_sparse_params += int((m._mask_bias == 0).sum())
-                cl_total_params += m._mask_bias.numel()
+        if m.bias_shape is not None:
+            cl_available_params += int((m._mask_bias == cl_version).sum())
+            cl_sparse_params += int((m._mask_bias == 0).sum())
+            cl_total_params += m._mask_bias.numel()
 
         cl_available_params += cl_sparse_params
 
@@ -216,8 +232,9 @@ def main():
         rollouts.after_update()
 
         # save for every interval-th episode or for the last epoch
-        if (j % args.save_interval == 0
-                or j == num_updates - 1) and args.save_dir != "":
+        if not args.no_update and \
+           (j % args.save_interval == 0 or j == num_updates - 1) \
+           and args.save_dir != "":
             if args.model_path is None:
                 save_path = os.path.join(args.save_dir, args.algo)
                 save_path = os.path.join(save_path, args.env_name + ".pt")
@@ -247,9 +264,18 @@ def main():
         # evaluate every once in a while
         if (args.eval_interval is not None and len(episode_rewards) > 1
                 and j % args.eval_interval == 0):
-            ob_rms = utils.get_vec_normalize(envs).ob_rms
-            evaluate(actor_critic, ob_rms, args.env_name, args.seed,
-                     args.num_processes, eval_log_dir, device)
+            ob_rms = getattr(utils.get_vec_normalize(envs), 'ob_rms', None)
+
+            log_data = [str(total_num_steps)]
+            for env_name, mask_version in cl_envs:
+                actor_critic.update_mask_version(mask_version)
+                res = evaluate(actor_critic, ob_rms, env_name, args.seed,
+                               args.num_processes, eval_log_dir, device)
+                log_data.append(str(res))
+
+            cl_evals_fp.write(','.join(log_data) + '\n')
+            cl_evals_fp.flush()
+            actor_critic.update_mask_version(cl_version)
 
         # prune every once in a while. don't start pruning until some time
         # has passed
@@ -258,7 +284,7 @@ def main():
            (args.prune_interval and j % args.prune_interval == 0):
 
             params = []
-            for m in actor_critic.base.get_sparse_parameters():
+            for m in actor_critic.get_sparse_parameters():
                 params.append((m._weight, m._mask_weight))
                 if m.bias_shape is not None:
                     params.append((m._bias, m._mask_bias))

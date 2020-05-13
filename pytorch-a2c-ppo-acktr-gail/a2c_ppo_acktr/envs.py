@@ -29,7 +29,7 @@ except ImportError:
     pass
 
 
-def make_env(env_id, seed, rank, log_dir, allow_early_resets):
+def make_env(env_id, seed, rank, log_dir, allow_early_resets, max_episode_steps=None):
     def _thunk():
         if env_id.startswith("dm"):
             _, domain, task = env_id.split('.')
@@ -42,9 +42,14 @@ def make_env(env_id, seed, rank, log_dir, allow_early_resets):
         if is_atari:
             env = make_atari(env_id)
 
-        env.seed(seed + rank)
+        # env_seed = seed + rank
+        env_seed = hash(str(seed) + str(rank)) % (10 ** 18)
+        env.seed(env_seed)
 
         if str(env.__class__.__name__).find('TimeLimit') >= 0:
+            if max_episode_steps is not None:
+                env._max_episode_steps = max_episode_steps
+
             env = TimeLimitMask(env)
 
         if log_dir is not None:
@@ -79,9 +84,10 @@ def make_vec_envs(env_name,
                   log_dir,
                   device,
                   allow_early_resets,
-                  num_frame_stack=None):
+                  num_frame_stack=None,
+                  max_episode_steps=None):
     envs = [
-        make_env(env_name, seed, i, log_dir, allow_early_resets)
+        make_env(env_name, seed, i, log_dir, allow_early_resets, max_episode_steps)
         for i in range(num_processes)
     ]
 
