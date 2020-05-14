@@ -140,6 +140,10 @@ def get_args():
         default=False,
         help='disables CUDA training')
     parser.add_argument(
+        '--device',
+        default='cuda:0',
+        help='which device should be used for training')
+    parser.add_argument(
         '--use-proper-time-limits',
         action='store_true',
         default=False,
@@ -196,6 +200,7 @@ def get_args():
     args = parser.parse_args()
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
+    args.device = 'cpu' if args.no_cuda else args.device
 
     assert args.algo in ['a2c', 'ppo', 'acktr']
     if args.recurrent_policy:

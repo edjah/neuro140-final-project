@@ -57,7 +57,7 @@ def main():
     cl_evals_fp.write(','.join(k for k, _ in cl_envs) + '\n')
 
     torch.set_num_threads(1)
-    device = torch.device("cuda:0" if args.cuda else "cpu")
+    device = torch.device(args.device)
 
     envs = make_vec_envs(args.env_name, args.seed, args.num_processes,
                          args.gamma, args.log_dir, device, False, max_episode_steps=5000)
@@ -142,8 +142,7 @@ def main():
             cl_sparse_params += int((m._mask_bias == 0).sum())
             cl_total_params += m._mask_bias.numel()
 
-        cl_available_params += cl_sparse_params
-
+    cl_available_params += cl_sparse_params
     cl_curr_sparsity = cl_sparse_params / cl_available_params
 
     print('{}/{} ({:.2f}%) parameters are available to train.'.format(
@@ -165,6 +164,7 @@ def main():
     episode_rewards = deque(maxlen=10)
 
     start = time.time()
+    last_log = time.time()
     num_updates = int(args.num_env_steps) // args.num_steps // args.num_processes
 
     for j in range(num_updates):
@@ -252,25 +252,33 @@ def main():
         if j % args.log_interval == 0 and len(episode_rewards) > 1:
             total_num_steps = (j + 1) * args.num_processes * args.num_steps
             end = time.time()
+            minutes = int(end - start) // 60
+            seconds = int(end - start) % 60
             print(
-                "Updates {}, num timesteps {}, Sparsity {:.1f}%, FPS {} \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
+                "Updates {}, num timesteps {}, Sparsity {:.1f}%, Curr FPS: {}, Time: {} min {} sec \n Last {} training episodes: mean/median reward {:.1f}/{:.1f}, min/max reward {:.1f}/{:.1f}\n"
                 .format(j, total_num_steps, 100.0 * cl_curr_sparsity,
-                        int(total_num_steps / (end - start)),
+                        int(args.num_steps * args.num_processes * args.log_interval / (end - last_log)),
+                        minutes, seconds,
                         len(episode_rewards), np.mean(episode_rewards),
                         np.median(episode_rewards), np.min(episode_rewards),
                         np.max(episode_rewards), dist_entropy, value_loss,
                         action_loss))
+            last_log = end
 
         # evaluate every once in a while
-        if (args.eval_interval is not None and len(episode_rewards) > 1
-                and j % args.eval_interval == 0):
+        if (args.eval_interval is not None and j % args.eval_interval == 0):
             ob_rms = getattr(utils.get_vec_normalize(envs), 'ob_rms', None)
 
+            total_num_steps = (j + 1) * args.num_processes * args.num_steps
             log_data = [str(total_num_steps)]
             for env_name, mask_version in cl_envs:
+                # running deterministically casues Breakout to get stuck in loops
+                # deterministic = (env_name != 'SixActionBreakoutNoFrameskip-v4')
+                deterministic = False
+
                 actor_critic.update_mask_version(mask_version)
                 res = evaluate(actor_critic, ob_rms, env_name, args.seed,
-                               args.num_processes, eval_log_dir, device)
+                               args.num_processes, eval_log_dir, device, deterministic)
                 log_data.append(str(res))
 
             cl_evals_fp.write(','.join(log_data) + '\n')
