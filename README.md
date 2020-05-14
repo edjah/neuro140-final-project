@@ -66,3 +66,11 @@ python main.py --cl-step=2 --env-name=SixActionBreakoutNoFrameskip-v4 --model-pa
 # play pong like a pro
 python main.py --cl-step=3 --env-name=PongNoFrameskip-v4 --model-path=continual-pretrained.pt --no-update --render
 ```
+
+**See them in action!**
+<div style="display: flex; justify-content: space-around;">
+    <img src="gifs/spaceinvaders.gif" width="200" />
+    <img src="gifs/breakout.gif" width="200" />
+    <img src="gifs/pong.gif" width="200" />
+</div>
+
