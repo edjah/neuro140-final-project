@@ -1,6 +1,3 @@
-from custom_envs.custom_envs import register_custom_envs
-register_custom_envs()
-
 import copy
 import glob
 import os
@@ -22,9 +19,11 @@ from a2c_ppo_acktr.envs import make_vec_envs
 from a2c_ppo_acktr.model import Policy
 from a2c_ppo_acktr.storage import RolloutStorage
 from evaluation import evaluate
+from custom_envs.custom_envs import register_custom_envs
 
 
 def main():
+    register_custom_envs()
     args = get_args()
 
     torch.manual_seed(args.seed)
@@ -68,7 +67,7 @@ def main():
         base_kwargs={'recurrent': args.recurrent_policy}
     )
     if args.model_path and os.path.exists(args.model_path):
-        actor_critic_state, _ = torch.load(args.model_path)
+        actor_critic_state, _ = torch.load(args.model_path, map_location=device)
         actor_critic.load_state_dict(actor_critic_state)
         print('Loaded saved model at {}'.format(args.model_path))
 
@@ -241,6 +240,7 @@ def main():
             else:
                 save_path = args.model_path
 
+            save_path = os.path.abspath(save_path)
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             torch.save([

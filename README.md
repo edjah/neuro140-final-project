@@ -6,7 +6,7 @@ This was a final project for [Neuro 140](http://klab.tch.harvard.edu/academia/cl
 
 
 ## Background
-Continual learning is the problem of training a neural network on different tasks in a sequential fashion without ever retraining on previous tasks. When the task switches, standard neural networks will adjust their weights to be better suited for the current task. This leads them to generally fail to retain their performance on previous tasks -- a phenemenon known as **catastrophic forgetting**.
+Continual learning is the problem of training a neural network on different tasks in a sequential fashion without ever retraining on previous tasks. When the task switches, standard neural networks will adjust their weights to be better suited for the current task. This leads them to generally fail to retain their performance on previous tasks -- a phenomenon known as **catastrophic forgetting**.
 
 In this repository, we solve the continual learning problem in a video game reinforcement learning context by utilizing a technique known as [weight pruning](https://arxiv.org/abs/1510.00149) to preserve only the weights that are important to each task. This allows the network to fully retain its performance on previous tasks while opening up capacity to learn new ones.
 
@@ -35,20 +35,34 @@ pip install -r requirements.txt
 
 ## How to Use
 
-Our reinforncement learning environments come from the OpenAI gym. The environments that you use must have in common:
+Our reinforcement learning environments come from the OpenAI gym. The environments that you use must have in common:
 - The number of actions
 - The shape of the observations
 
 If either of these requirements is not met, custom environments which normalize these properties can be constructed. See [here](custom_envs/custom_envs.py) for an example.
 
+#### Training
 To train a model on tasks in a continual manner, you would do something like this:
 ```
-# Train a model with 80% sparsity to play pong. The default is 10m frames
-python main.py --cl-step=1 --env-name=PongNoFrameskip-v4 --model-path=continual.pt --max-prune-pcnt=0.8
+# Train a model with 80% sparsity to play space invaders. The default is 10m frames
+python main.py --cl-step=1 --env-name=SpaceInvadersNoFrameskip-v4 --model-path=continual.pt --max-prune-percent=0.8
 
 # Update the model to play breakout. 80% of the weights are available for retraining.
-python main.py --cl-step=2 --env-name=SixActionBreakoutNoFrameskip-v4 --model-path=continual.pt --max-prune-pcnt=0.8
+python main.py --cl-step=2 --env-name=SixActionBreakoutNoFrameskip-v4 --model-path=continual.pt --max-prune-percent=0.8
 
-# Update the model to play space invaders. 64% of the weights are available for retraining
-python main.py --cl-step=3 --env-name=SpaceInvadersNoFrameskip-v4 --model-path=continual.pt
+# Update the model to play pong. 64% of the weights are available for retraining
+python main.py --cl-step=3 --env-name=PongNoFrameskip-v4 --model-path=continual.pt
+```
+
+#### Evaluation
+To evaluate the model (i.e. render the game), you can you run:
+```
+# play space invaders like a pro
+python main.py --cl-step=1 --env-name=SpaceInvadersNoFrameskip-v4 --model-path=continual-pretrained.pt --no-update --render
+
+# play breakout like a pro
+python main.py --cl-step=2 --env-name=SixActionBreakoutNoFrameskip-v4 --model-path=continual-pretrained.pt --no-update --render
+
+# play pong like a pro
+python main.py --cl-step=3 --env-name=PongNoFrameskip-v4 --model-path=continual-pretrained.pt --no-update --render
 ```
